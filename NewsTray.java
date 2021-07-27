@@ -2,6 +2,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
+import javax.imageio.ImageIO;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -42,11 +43,14 @@ public class NewsTray {
     private final HashSet<String> usedHeadlines = new HashSet<>();
 
 
-    public NewsTray() throws AWTException {
+    public NewsTray() throws AWTException, IOException {
         //setup system tray
+
         tray = SystemTray.getSystemTray();
-        Image image = Toolkit.getDefaultToolkit().createImage("IconSmall.jpg");
-        trayIcon = new TrayIcon(image, "ORF");
+//        Image image = Toolkit.getDefaultToolkit().createImage("IconSmall1.png");
+        URL url = new URL("https://www.orf.at/mojo/1_1/storyserver/common/ms-metro-icon.png");
+        Image image = ImageIO.read(url);
+        trayIcon = new TrayIcon(image, "News");
         trayIcon.setImageAutoSize(true);
         trayIcon.setToolTip("News Tray");
         tray.add(trayIcon);
