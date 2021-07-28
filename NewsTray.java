@@ -1,4 +1,5 @@
 import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
@@ -24,8 +25,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class NewsTray {
-    private String website = "https://orf.at/";
-    private String[] rssFeeds = {"https://rss.orf.at/news.xml",
+    private final String website = "https://orf.at/";
+    private final String[] rssFeeds = {"https://rss.orf.at/news.xml",  //currently just using the first
             "https://rss.orf.at/sport.xml",
             "https://rss.orf.at/debatten.xml",
             "https://rss.orf.at/help.xml",
@@ -34,20 +35,17 @@ public class NewsTray {
             "https://rss.orf.at/fm4.xml",
             "https://rss.orf.at/oesterreich.xml",
             "https://rss.orf.at/ooe.xml"};
-    //    private String currentFilePath;  //dirty hack do not steal
     private boolean keepRunning = true;
     private boolean pauseScanning = false;
     private final SystemTray tray;
     private final TrayIcon trayIcon;
     private final PopupMenu popupMenu;
-    private final HashSet<String> usedHeadlines = new HashSet<>();
 
 
     public NewsTray() throws AWTException, IOException {
         //setup system tray
-
         tray = SystemTray.getSystemTray();
-//        Image image = Toolkit.getDefaultToolkit().createImage("IconSmall1.png");
+
         URL url = new URL("https://www.orf.at/mojo/1_1/storyserver/common/ms-metro-icon.png");
         Image image = ImageIO.read(url);
         trayIcon = new TrayIcon(image, "News");
@@ -86,38 +84,38 @@ public class NewsTray {
         };
         pauseItem.addItemListener(pauseListener);
 
-
-        //run main loop
         mainLoop();
     }
 
-    public void mainLoop() {
+    public void mainLoop() throws IOException {
         long updateTime = System.nanoTime();
         long delayTime = 60 * (long) Math.pow(10, 9);
+        HashSet<String> previousHeadlines = new HashSet<>();
         ArrayList<String> headlines = new ArrayList<>();
 
+
+        //get current headlines, add as known
         try {
             headlines.addAll(getHeadlinesFromWebsite(website));
         } catch (FileNotFoundException e) {
             System.out.println("Could not get headlines");
             System.out.println(e.toString());
         }
-
         try {
             headlines.addAll(getHeadlinesFromRSSFeed(rssFeeds[0]));
         } catch (IOException e) {
             System.out.println("Could not get headlines");
             System.out.println(e.toString());
         }
-
-
         if (headlines.size() == 0) {
             keepRunning = false;
+            throw new IOException();
         } else {
-            usedHeadlines.addAll(headlines);
+            previousHeadlines.addAll(headlines);
         }
 
 
+        //loop, if enough time as passed and scanning is active get new headlines
         while (keepRunning) {
             if (System.nanoTime() > updateTime + delayTime) {
                 if (!pauseScanning) {
@@ -134,10 +132,10 @@ public class NewsTray {
 
                     //show new headlines from website
                     for (String currentHeadline : headlines) {
-                        if (!usedHeadlines.contains(currentHeadline)) {
+                        if (!previousHeadlines.contains(currentHeadline)) {
                             showMessage(currentHeadline);
                             System.out.println("found new Headline");
-                            usedHeadlines.add(currentHeadline);
+                            previousHeadlines.add(currentHeadline);
                         }
                     }
 
@@ -151,31 +149,26 @@ public class NewsTray {
 
                     //show new headlines from rss
                     for (String currentHeadline : headlines) {
-                        if (!usedHeadlines.contains(currentHeadline)) {
+                        if (!previousHeadlines.contains(currentHeadline)) {
                             showMessage(currentHeadline);
                             System.out.println("found new Headline");
-                            usedHeadlines.add(currentHeadline);
+                            previousHeadlines.add(currentHeadline);
                         }
                     }
-
                     System.out.println("Getting headlines");
                 }
                 updateTime = updateTime + delayTime;
             }
 
-
-            //wait some time
             try {
                 Thread.sleep(50);
             } catch (InterruptedException e) {
-                System.out.println("Thread sleep interrupted. We don't care.");
+                System.out.println("Thread sleep interrupted. Interesting.");
             }
-
         }
 
         tray.remove(trayIcon);
     }
-
 
     public void startRunning() {
         keepRunning = true;
@@ -184,7 +177,6 @@ public class NewsTray {
     public void stopRunning() {
         keepRunning = false;
     }
-
 
     public ArrayList<String> getHeadlinesFromWebsite(String targetURL) throws FileNotFoundException {
         String filePath = "";
@@ -209,7 +201,7 @@ public class NewsTray {
     public String getSite(String targetURL) throws IOException {
         URL url = new URL(targetURL);
         String filePath = "pages//";
-        String fileName = "page";
+        String fileName;
         String fileEnd = ".html";
         SimpleDateFormat format = new SimpleDateFormat("yyyyMMddHHmmssSSS");
         Date date = new Date();
@@ -243,7 +235,7 @@ public class NewsTray {
     public ArrayList<String> getHeadlinesFromRSSFeed(String targetURL) throws IOException {
         String filePath;
         filePath = getXMLFromRSSFeed(targetURL);
-        ArrayList<String> headlines = new ArrayList<>();
+        ArrayList<String> headlines;
         headlines = getHeadlinesFromXML(filePath);
         return headlines;
     }
@@ -251,7 +243,7 @@ public class NewsTray {
     public String getXMLFromRSSFeed(String targetURL) throws IOException {
         URL url = new URL(targetURL);
         String filePath = "pages//";
-        String fileName = "RSS"; //no used
+        String fileName;
         String fileEnd = ".xml";
         SimpleDateFormat format = new SimpleDateFormat("yyyyMMddHHmmssSSS");
         Date date = new Date();
@@ -271,9 +263,11 @@ public class NewsTray {
             DocumentBuilder builder = factory.newDocumentBuilder();
             Document document = builder.parse(new File(filePath));
             document.getDocumentElement().normalize();
+
+            //text content of every (first) "title" child of all "item" nodes, should be sturdier this way
             NodeList itemList = document.getElementsByTagName("item");
             for (int i = 0; i < itemList.getLength(); i++) {
-                headlines.add(itemList.item(i).getChildNodes().item(1).getTextContent()); //item 0 is the text between the tags!
+                headlines.add( ((Element) itemList.item(i)).getElementsByTagName("title").item(0).getTextContent() );
             }
         } catch (ParserConfigurationException | SAXException e) {
             e.printStackTrace();
@@ -283,6 +277,6 @@ public class NewsTray {
     }
 
     public void showMessage(String message) {
-        trayIcon.displayMessage("ORF NEWS", message, TrayIcon.MessageType.NONE);
+        trayIcon.displayMessage("NEWS", message, TrayIcon.MessageType.NONE);
     }
 }
